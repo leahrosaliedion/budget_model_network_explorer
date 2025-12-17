@@ -43,6 +43,13 @@ function App() {
     matchedCount: 0
   });
 
+  const [displayGraphInfo, setDisplayGraphInfo] = useState<{
+    nodeCount: number;
+    truncated: boolean;
+    matchedCount: number;
+  } | null>(null);
+
+
   // Existing state
   const [stats, setStats] = useState<Stats | null>(null);
   const [tagClusters, setTagClusters] = useState<TagCluster[]>([]);
@@ -168,6 +175,12 @@ function App() {
 
 
 const loadData = async () => {
+
+  console.log('=== loadData called ===');
+  console.log('limit:', limit);
+  console.log('maxHops:', maxHops);
+  console.log('enabledCategories:', Array.from(enabledCategories));
+
   try {
     setLoading(true);
     const clusterIds = Array.from(enabledClusterIds);
@@ -309,7 +322,7 @@ const loadData = async () => {
         setActorTotalBeforeFilter(relationships.length);
       }
     }
-  }, [buildMode, selectedActor, enabledClusterIds, enabledCategories, yearRange, includeUndated, keywords, maxHops, displayGraph, convertGraphToRelationships]);
+  }, [buildMode, selectedActor, enabledClusterIds, enabledCategories, yearRange, includeUndated, keywords, maxHops, convertGraphToRelationships]);
 
   // Handle bottom-up network building
   const handleBottomUpSearch = useCallback((params: {
@@ -320,7 +333,21 @@ const loadData = async () => {
     edgeTypes: string[];
     searchFields: string[];
     searchLogic: 'AND' | 'OR';
+    nodeRankingMode: 'global' | 'subgraph';
   }) => {
+
+  console.log('=== Bottom-up search triggered ===');
+  console.log('Params received:', params);
+  console.log('Edge types:', params.edgeTypes);
+  console.log('Node types:', params.nodeTypes);
+  console.log('Keywords:', params.keywords);
+  
+  if (!builder) {
+    console.error('Builder not initialized yet');
+    alert('Network builder is not ready. Please wait for the data to load.');
+    return;
+  }
+
     if (!builder) {
       console.error('Builder not initialized yet');
       alert('Network builder is not ready. Please wait for the data to load.');
@@ -366,27 +393,54 @@ const loadData = async () => {
         maxTotalNodes: params.maxNodes
       };
       
-      const filtered = builder.buildNetwork(builderState, params.searchLogic);
+      const filtered = builder.buildNetwork(builderState, params.searchLogic, params.nodeRankingMode);
       
-      console.log('=== Build Complete ===');
-      console.log('Result:', {
-        nodes: filtered.nodes.length,
-        links: filtered.links.length,
-        truncated: filtered.truncated,
-        matchedCount: filtered.matchedCount
-      });
-      
-      if (filtered.nodes.length === 0) {
-        alert(`No nodes found matching "${terms.join(', ')}". Try different keywords or increase the degree of connection.`);
-      }
-      
-      // Convert to relationships for the existing renderer
-      const builtRelationships = convertGraphToRelationships(filtered.nodes, filtered.links);
-      setRelationships(builtRelationships);
-      setTotalBeforeLimit(filtered.matchedCount);
-      
-      setDisplayGraph(filtered);
-      setBuildMode('bottom-up');
+	// Add diagnostic logging
+console.log('🎨 Bottom-up graph built:');
+console.log('Sample nodes with colors:', filtered.nodes.slice(0, 5).map(n => ({
+  id: n.id,
+  name: n.name,
+  node_type: n.node_type,
+  color: n.color,
+  baseColor: n.baseColor
+})));
+
+        console.log('=== Build Complete ===');
+console.log('Result:', {
+  nodes: filtered.nodes.length,
+  links: filtered.links.length,
+  truncated: filtered.truncated,
+  matchedCount: filtered.matchedCount
+});
+
+if (filtered.nodes.length === 0) {
+  alert(`Graph is empty after filtering. This can happen when:\n- Max nodes is too low\n- Edge type filters remove all connections\n\nTry: Increase max nodes or change edge type filters.`);
+}
+
+// ✅ Calculate if results were truncated by maxNodes limit
+const actualTruncated = filtered.matchedCount > params.maxNodes;
+const actualNodeCount = filtered.nodes.length;
+
+setDisplayGraph({
+  nodes: filtered.nodes,
+  links: filtered.links,
+  truncated: actualTruncated,
+  matchedCount: filtered.matchedCount
+});
+
+console.log('displayGraph SET with:', filtered.nodes.length, 'nodes');
+
+// ✅ Set the graph info for the sidebar
+setDisplayGraphInfo({
+  nodeCount: actualNodeCount,
+  truncated: actualTruncated,
+  matchedCount: filtered.matchedCount
+});
+
+// Don't set relationships in bottom-up mode - we use displayGraph directly
+setBuildMode('bottom-up');
+
+
     } catch (error) {
       console.error('Error building network:', error);
       alert('An error occurred while building the network. Check the console for details.');
@@ -419,6 +473,12 @@ const loadData = async () => {
     loadData();
   }, []);
 
+  console.log('=== Rendering NetworkGraph ===');
+  console.log('buildMode:', buildMode);
+  console.log('displayGraph:', { nodes: displayGraph.nodes.length, links: displayGraph.links.length });
+  console.log('relationships:', relationships.length);
+
+
   return (
     <div className="flex h-screen bg-gray-900 text-white">
       {/* Desktop Sidebar */}
@@ -448,11 +508,7 @@ const loadData = async () => {
           onStartNewNetwork={handleStartNewNetwork}
           onResetToTopDown={handleResetToTopDown}
           onBottomUpSearch={handleBottomUpSearch}
-          displayGraphInfo={buildMode === 'bottom-up' ? {
-            nodeCount: displayGraph.nodes.length,
-            truncated: displayGraph.truncated,
-            matchedCount: displayGraph.matchedCount
-          } : undefined}
+          displayGraphInfo={buildMode === 'bottom-up' ? displayGraphInfo : undefined}
         />
       </div>
 
@@ -465,15 +521,17 @@ const loadData = async () => {
         )}
 
         {loading ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
-              <p className="text-gray-400">Loading network data...</p>
-            </div>
-          </div>
-        ) : (
+  <div className="flex items-center justify-center h-full bg-[#161400]">
+    <div className="text-center">
+      <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-purple-500 mx-auto mb-4"></div>
+      <p className="text-gray-300">Loading network data...</p>
+    </div>
+  </div>
+) : (
           <NetworkGraph
-            relationships={relationships}
+
+            graphData={buildMode === 'bottom-up' ? displayGraph : undefined}
+            relationships={buildMode === 'top-down' ? relationships : undefined}
             selectedActor={selectedActor}
             onActorClick={handleActorClick}
             minDensity={minDensity}

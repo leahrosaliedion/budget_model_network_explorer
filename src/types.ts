@@ -1,46 +1,45 @@
 // src/types.ts
 
-export type NodeType = 'section' | 'entity' | 'concept';  // Changed 'tag' to 'concept'
+export type NodeType = 'section' | 'entity' | 'concept' | 'index';
 
 export interface GraphNode extends d3.SimulationNodeDatum {
-  id: string;          // e.g. "section:26-1", "entity:123", "term:income"
+  id: string;          // e.g. "term:income", "index:title-26_section-61"
   name: string;        // human-readable label
-  val: number;         // used for node size (degree) - computed at runtime
+  val?: number;         // used for node size (degree) - computed at runtime
   totalVal?: number;   // degree before filtering - computed at runtime
   color?: string;      // computed at runtime based on type + degree
   baseColor?: string;  // computed at runtime
   node_type: NodeType; // Required
 
   // NEW: Index/Section-specific metadata (from indexes_output.csv)
-  index_type?: string;       // 'Index'
   title?: string | null;     // parsed from name (e.g., "26")
   part?: string | null;      // parsed from name
   chapter?: string | null;   // parsed from name
   subchapter?: string | null;// parsed from name
-  section?: string | null;   // parsed from name (NOT the same as section_num)
-  full_name?: string;        // e.g., "TITLE 26—INTERNAL REVENUE CODE"
-  text?: string;             // section text content
+  section?: string | null;   // parsed from name
+  display_label?: string | null; // ✅ ADDED: e.g., "[26 U.S.C. 61]"
 
-  // NEW: Term-specific metadata (from terms_output.csv)
-  term_type?: string;        // 'Entity' or 'Concept'
+  // ✅ NEW: Properties object containing all data from CSV
+  properties?: {
+    full_name?: string;        // From indexes: full name of statute
+    text?: string;             // From indexes: section text content
+    definition?: string;       // ✅ ADDED: From terms that are defined
+    embedding?: number[];      // From both indexes and terms
+    full_name_embedding?: number[]; // From indexes
+    [key: string]: any;        // Allow any other properties
+  };
 
-  // LEGACY: Old section fields (keep for backward compatibility)
+  // LEGACY/COMPATIBILITY: Keep these at top level for backward compatibility
+  full_name?: string;
+  text?: string;
   section_num?: string | number;
   section_heading?: string | null;
-  title_num?: number;
-  title_heading?: string | null;
   section_text?: string | null;
-  terms?: string | null;
-  tags?: string | null;
-  aux_verbs?: string | null;
-
-  // LEGACY: Entity-specific metadata
-  department?: string | null;
-  total_mentions?: number | null;
+  title_num?: number;
   entity?: string | null;
-
-  // LEGACY: Tag-specific metadata
   tag?: string | null;
+  term_type?: string;        // 'Entity' or 'Concept' from old data
+  index_type?: string;       // 'Index' from old data
 
   // D3 simulation properties (from d3.SimulationNodeDatum)
   x?: number;
@@ -54,16 +53,15 @@ export interface GraphNode extends d3.SimulationNodeDatum {
 export interface GraphLink {
   source: string | GraphNode;
   target: string | GraphNode;
-  action: string;              // e.g., 'defines', 'references', 'part_of'
+  edge_type: 'definition' | 'reference' | 'hierarchy'; // ✅ More specific type
+  action: string;              // 'defines', 'references', 'includes'
+  
+  // Optional edge properties
+  definition?: string;         // For definition edges
   location?: string;
   timestamp?: string;
-
-  edge_type: string;           // 'definition', 'reference', 'hierarchy'
   weight?: number;
   count?: number;
-  
-  // NEW: For definition edges
-  definition?: string;         // The actual definition text
 }
 
 export interface GraphData {
@@ -87,8 +85,7 @@ export interface Relationship {
   actor_id?: string;
   target_id?: string;
   
-  // NEW: For definition relationships
-  definition?: string;
+  definition?: string;    // For definition relationships
 }
 
 export interface Actor {
@@ -132,15 +129,15 @@ export interface TagCluster {
 export interface NetworkBuilderState {
   // Keyword search
   searchTerms: string[];
-  searchFields: ('section_text' | 'section_heading' | 'section_num' | 'entity' | 'tag' | 'text' | 'full_name')[];  // Added new fields
+  searchFields: ('text' | 'full_name' | 'display_label' | 'definition' | 'entity' | 'concept' | 'properties')[]; // ✅ UPDATED: New search fields
   
   // Node type filters
-  allowedNodeTypes: ('section' | 'entity' | 'concept')[];  // Changed 'tag' to 'concept'
+  allowedNodeTypes: ('section' | 'entity' | 'concept' | 'index')[]; // ✅ ADDED 'index'
   
   // Edge type filters
-  allowedEdgeTypes: ('definition' | 'reference' | 'hierarchy')[];  // Updated edge types
+  allowedEdgeTypes: ('definition' | 'reference' | 'hierarchy')[];
   
-  // Title/section filters
+  // Title/section filters (keep for potential future use)
   allowedTitles: number[];
   allowedSections: string[];
   

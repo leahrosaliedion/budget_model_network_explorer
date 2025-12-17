@@ -33,7 +33,7 @@ export async function fetchTagClusters(): Promise<TagCluster[]> {
 }
 
 export async function loadGraph(): Promise<GraphData> {
-  const res = await fetch('/title26_graph.json');
+  const res = await fetch(`${import.meta.env.BASE_URL}title26_graph.json`);
   if (!res.ok) {
     throw new Error('Failed to load graph data');
   }
@@ -70,6 +70,10 @@ export async function loadGraph(): Promise<GraphData> {
       node_type: n.node_type,
       val: degree,
       totalVal: degree,
+
+      display_label: n.display_label,
+
+      properties: n.properties,
       
       // New index/section fields
       index_type: n.index_type,
@@ -167,6 +171,8 @@ export async function fetchRelationships(
       actor_id: sourceId,
       target_id: targetId,
       definition: link.definition,  // Include definition if present
+      actor_display_label: sourceNode?.display_label,
+      target_display_label: targetNode?.display_label,
     };
   });
 
@@ -314,8 +320,26 @@ export async function fetchDocumentText(docId: string): Promise<{ text: string }
 
   const node = cachedGraph?.nodes.find((n) => n.id === docId);
   
-  // Use 'text' field, fallback to 'section_text' for compatibility
-  const text = node?.text || node?.section_text || 'No text available for this node.';
+  console.log('=== fetchDocumentText DEBUG ===');
+  console.log('docId:', docId);
+  console.log('node found:', !!node);
+  console.log('node object:', node);
+  console.log('node.text:', node?.text);
+  console.log('node.section_text:', (node as any)?.section_text);
+  console.log('node.properties:', (node as any)?.properties);
+  console.log('node.properties.text:', (node as any)?.properties?.text);
+  
+  // Check properties object first, then top-level fields
+  const text = (node as any)?.properties?.text
+    || node?.text 
+    || (node as any)?.section_text 
+    || (node as any)?.properties?.full_name
+    || (node as any)?.definition
+    || (node as any)?.full_name
+    || 'No text available for this node.';
+
+  console.log('Final text value:', text);
+  console.log('Text length:', text?.length);
 
   return { text };
 }
@@ -325,6 +349,24 @@ export async function fetchNodeDetails(nodeId: string): Promise<any> {
     await loadGraph();
   }
 
-  const node = cachedGraph?.nodes.find((n) => n.id === nodeId);
-  return node || null;
+  // Try to find by id first, then by name
+  let node = cachedGraph?.nodes.find((n) => n.id === nodeId);
+  
+  if (!node) {
+    // If not found by id, try searching by name
+    node = cachedGraph?.nodes.find((n) => n.name === nodeId);
+  }
+  
+  if (!node) {
+    console.log('❌ Node not found. Searched for:', nodeId);
+    console.log('Available nodes sample:', cachedGraph?.nodes.slice(0, 3).map(n => ({ id: n.id, name: n.name })));
+    return null;
+  }
+  
+  // ✅ Merge properties into the main object for easier access
+  return {
+    ...node,
+    ...(node as any).properties,  // Spread properties to top level
+  };
 }
+

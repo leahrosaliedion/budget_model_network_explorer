@@ -51,12 +51,19 @@ export default function DocumentModal({
       setError(null);
 
       try {
+        console.log('=== DocumentModal loading ===');
+        console.log('docId:', docId);
+
         // For US Code view, fetchDocument gives metadata; fetchDocumentText gives section_text
         const [doc, textData, nodeDetails] = await Promise.all([
           fetchDocument(docId),
           fetchDocumentText(docId),
           fetchNodeDetails(docId)
         ]);
+
+        console.log('Fetched doc:', doc);
+        console.log('Fetched textData:', textData);
+        console.log('Fetched nodeDetails:', nodeDetails);
 
         setDocument({
   ...doc,  // ← Changed from {doc, to ...doc,
@@ -69,10 +76,13 @@ export default function DocumentModal({
   section: nodeDetails?.section
 });
         setDocumentText(textData.text);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load section text');
-      } finally {
-        setLoading(false);
+
+      console.log('Final documentText length:', textData.text?.length);
+  } catch (err) {
+    console.error('Error loading document:', err);
+    setError(err instanceof Error ? err.message : 'Failed to load section text');
+  } finally {
+    setLoading(false);
       }
     };
 

@@ -28,8 +28,55 @@ export default function RightSidebar({
   const [searchResults, setSearchResults] = useState<Actor[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [nodeDetails, setNodeDetails] = useState<Record<string, GraphNode | null>>({});
+  const [displayLabels, setDisplayLabels] = useState<Record<string, string>>({});
+  const [selectedActorDisplayLabel, setSelectedActorDisplayLabel] = useState<string | null>(null);
+  const [selectedActorDetails, setSelectedActorDetails] = useState<GraphNode | null>(null); // ✅ NEW
+
+  // Fetch display label for a node
+  const fetchDisplayLabel = async (nodeId: string) => {
+    if (displayLabels[nodeId]) return;
+    
+    try {
+      const details = await fetchNodeDetails(nodeId);
+      if (details?.node_type === 'index' && details.display_label) {
+        setDisplayLabels(prev => ({ ...prev, [nodeId]: details.display_label }));
+      }
+    } catch (err) {
+      console.error('Failed to fetch display label for:', nodeId, err);
+    }
+  };
 
   if (!selectedActor) return null;
+
+  // ✅ Fetch details for selected actor (for button display)
+  useEffect(() => {
+    const fetchSelectedActorLabel = async () => {
+      if (!selectedActor) {
+        setSelectedActorDisplayLabel(null);
+        setSelectedActorDetails(null);
+        return;
+      }
+      
+      try {
+        const details = await fetchNodeDetails(selectedActor);
+
+        
+        setSelectedActorDetails(details);
+        
+        if (details?.node_type === 'index' && details.display_label) {
+          setSelectedActorDisplayLabel(details.display_label);
+        } else {
+          setSelectedActorDisplayLabel(null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch display label for selected actor:', err);
+        setSelectedActorDisplayLabel(null);
+        setSelectedActorDetails(null);
+      }
+    };
+    
+    fetchSelectedActorLabel();
+  }, [selectedActor]);
 
   // Search for another node to filter by
   useEffect(() => {
@@ -54,6 +101,28 @@ export default function RightSidebar({
     const timeoutId = setTimeout(performSearch, 300);
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
+
+  // Fetch display labels for all relationship nodes
+  useEffect(() => {
+    const fetchAllLabels = async () => {
+      const nodeIds = new Set<string>();
+      
+      relationships.forEach(rel => {
+        if (rel.actor_id) nodeIds.add(rel.actor_id);
+        if (rel.target_id) nodeIds.add(rel.target_id);
+      });
+      
+      for (const nodeId of nodeIds) {
+        if (!displayLabels[nodeId]) {
+          fetchDisplayLabel(nodeId);
+        }
+      }
+    };
+    
+    if (relationships.length > 0) {
+      fetchAllLabels();
+    }
+  }, [relationships]);
 
   // Filter relationships by a second node if chosen
   const filteredRelationships = filterActor
@@ -88,6 +157,10 @@ export default function RightSidebar({
       try {
         const details = await fetchNodeDetails(neighborId);
         setNodeDetails(prev => ({ ...prev, [neighborId]: details }));
+        
+        if (details?.node_type === 'index' && details.display_label) {
+          setDisplayLabels(prev => ({ ...prev, [neighborId]: details.display_label }));
+        }
       } catch (err) {
         console.error('Failed to fetch node details:', err);
         setNodeDetails(prev => ({ ...prev, [neighborId]: null }));
@@ -101,21 +174,40 @@ export default function RightSidebar({
         {/* Header */}
         <div className="p-4 border-b border-gray-700">
           <div className="flex justify-between items-start mb-3">
-            <div>
+            <div className="flex-1">
               <div className="flex items-baseline gap-2">
                 <h2 className="text-lg font-semibold text-blue-400">Node relationships</h2>
                 <span className="text-xs text-gray-500">
                   ({yearRange[0]} - {yearRange[1]})
                 </span>
               </div>
-              <p className="text-sm text-gray-400">{selectedActor}</p>
+              <p className="text-sm text-gray-400">{selectedActorDisplayLabel || selectedActor}</p>
               <p className="text-xs text-gray-500 mt-1">
                 Showing {sortedRelationships.length} of {totalRelationships} relationships
               </p>
+              
+              {/* ✅ NEW: View buttons for selected node */}
+              <div className="mt-3 flex gap-2">
+                {selectedActorDetails && (selectedActorDetails.node_type === 'section' || selectedActorDetails.node_type === 'index') && (
+                  <button
+                    onClick={() => setDocumentToView(selectedActorDetails.id)}
+                    className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium transition-colors"
+                  >
+                    View full section text
+                  </button>
+                )}
+                
+               {selectedActorDetails && selectedActorDetails.node_type === 'concept' && selectedActorDetails.properties?.definition && (
+  <div className="mt-2 p-2 bg-blue-900/20 border border-blue-700/30 rounded">
+    <div className="text-xs text-blue-400 font-semibold mb-1">Definition:</div>
+    <div className="text-xs text-gray-300">{selectedActorDetails.properties.definition}</div>
+  </div>
+)}
+              </div>
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-white transition-colors"
+              className="text-gray-400 hover:text-white transition-colors ml-2"
             >
               ✕
             </button>
@@ -212,12 +304,12 @@ export default function RightSidebar({
                   >
                     <div className="text-sm flex items-center justify-between">
                       <div>
-                        <span className={`font-medium ${rel.actor === selectedActor ? 'text-green-400' : 'text-red-400'}`}>
-                          {rel.actor}
+                        <span className={`font-medium ${rel.actor === selectedActor ? 'text-[#12B76A]' : 'text-[#F04438]'}`}>
+                          {displayLabels[rel.actor_id || rel.actor] || rel.actor}
                         </span>
                         <span className="text-gray-300 mx-1">{rel.action}</span>
-                        <span className={`font-medium ${rel.target === selectedActor ? 'text-green-400' : 'text-red-400'}`}>
-                          {rel.target}
+                        <span className={`font-medium ${rel.target === selectedActor ? 'text-[#12B76A]' : 'text-[#F04438]'}`}>
+                          {displayLabels[rel.target_id || rel.target] || rel.target}
                         </span>
                       </div>
                       <span className="text-gray-500 text-xs ml-2">
@@ -230,12 +322,7 @@ export default function RightSidebar({
                   {isExpanded && (
                     <div className="px-4 pb-4 bg-gray-700/10">
 
-                      {rel.definition && (
-      <div className="mb-3 p-2 bg-blue-900/20 border border-blue-700/30 rounded">
-        <div className="text-xs text-blue-400 font-semibold mb-1">Definition:</div>
-        <div className="text-xs text-gray-300">{rel.definition}</div>
-      </div>
-    )}
+                      {/* ✅ REMOVED: rel.definition display (was causing duplication) */}
 
                       {neighborDetails === undefined && (
                         <div className="text-xs text-gray-500">
@@ -243,60 +330,94 @@ export default function RightSidebar({
                         </div>
                       )}
 
-                      {neighborDetails && neighborDetails.node_type === 'section' && (
-  <>
-    <div className="text-xs text-gray-400 mb-1">
-      Section details (excluding full text)
-    </div>
-    <div className="text-sm text-gray-200 mb-1">
-      {neighborDetails.full_name && (
-        <div className="font-semibold mb-1">
-          {neighborDetails.full_name}
-        </div>
-      )}
-      {neighborDetails.section_num && (
-        <span className="font-semibold">
-          § {neighborDetails.section_num}{' '}
-        </span>
-      )}
-      {neighborDetails.section_heading}
-    </div>
-    <div className="text-xs text-gray-400">
-      {neighborDetails.title && (
-        <div>
-          <span className="font-semibold">Title:</span>{' '}
-          {neighborDetails.title}
-          {neighborDetails.title_heading && ` – ${neighborDetails.title_heading}`}
-        </div>
-      )}
-      {neighborDetails.tags && (
-        <div className="mt-1">
-          <span className="font-semibold">Tags:</span>{' '}
-          {neighborDetails.tags}
-        </div>
-      )}
-      {neighborDetails.terms && (
-        <div className="mt-1">
-          <span className="font-semibold">Key terms:</span>{' '}
-          {neighborDetails.terms}
-        </div>
-      )}
-    </div>
-    <button
-      onClick={() => setDocumentToView(neighborDetails.id)}
-      className="mt-3 text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium transition-colors"
-    >
-      View full section text
-    </button>
-  </>
-)}
+                      {/* ✅ Handle 'index' and 'section' node types */}
+                      {neighborDetails && (neighborDetails.node_type === 'section' || neighborDetails.node_type === 'index') && (
+                        <>
+                          <div className="text-xs text-gray-400 mb-1">
+                            {neighborDetails.node_type === 'index' ? 'Index' : 'Section'} details
+                          </div>
+                          
+                          {neighborDetails.node_type === 'index' && neighborDetails.display_label ? (
+                            <div className="font-semibold text-sm text-blue-300 mb-2">
+                              {neighborDetails.display_label}
+                            </div>
+                          ) : neighborDetails.display_label && (
+                            <div className="font-semibold text-sm text-blue-300 mb-2">
+                              {neighborDetails.display_label}
+                            </div>
+                          )}
+                          
+                          {(neighborDetails.properties?.full_name || neighborDetails.full_name) && (
+                            <div className="font-semibold text-sm text-gray-200 mb-1">
+                              {neighborDetails.properties?.full_name || neighborDetails.full_name}
+                            </div>
+                          )}
+                          
+                          <div className="text-sm text-gray-200 mb-1">
+                            {neighborDetails.section_num && (
+                              <span className="font-semibold">
+                                § {neighborDetails.section_num}{' '}
+                              </span>
+                            )}
+                            {neighborDetails.section_heading}
+                          </div>
+                          
+                          <div className="text-xs text-gray-400">
+                            {(neighborDetails.title || neighborDetails.part || neighborDetails.chapter || neighborDetails.subchapter || neighborDetails.section) && (
+                              <div className="mb-1">
+                                <span className="font-semibold">Location:</span>{' '}
+                                {neighborDetails.title && `Title ${neighborDetails.title}`}
+                                {neighborDetails.part && `, Part ${neighborDetails.part}`}
+                                {neighborDetails.chapter && `, Chapter ${neighborDetails.chapter}`}
+                                {neighborDetails.subchapter && `, Subchapter ${neighborDetails.subchapter}`}
+                                {neighborDetails.section && `, Section ${neighborDetails.section}`}
+                              </div>
+                            )}
+                            
+                            {neighborDetails.title_num && (
+                              <div className="mb-1">
+                                <span className="font-semibold">Title:</span>{' '}
+                                {neighborDetails.title_num}
+                                {neighborDetails.title_heading && ` – ${neighborDetails.title_heading}`}
+                              </div>
+                            )}
+                            {neighborDetails.tags && (
+                              <div className="mt-1">
+                                <span className="font-semibold">Tags:</span>{' '}
+                                {neighborDetails.tags}
+                              </div>
+                            )}
+                            {neighborDetails.terms && (
+                              <div className="mt-1">
+                                <span className="font-semibold">Key terms:</span>{' '}
+                                {neighborDetails.terms}
+                              </div>
+                            )}
+                          </div>
+                          
+                          <button
+                            onClick={() => setDocumentToView(neighborDetails.id)}
+                            className="mt-3 text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium transition-colors"
+                          >
+                            View full section text
+                          </button>
+                        </>
+                      )}
 
-
+                      {/* ✅ Handle entity nodes */}
                       {neighborDetails && neighborDetails.node_type === 'entity' && (
                         <div className="text-xs text-gray-400">
                           <div className="mb-1">
                             <span className="font-semibold">Entity:</span> {neighborDetails.name}
                           </div>
+                          
+                          {neighborDetails.properties?.definition && (
+                            <div className="mb-2 p-2 bg-blue-900/20 border border-blue-700/30 rounded">
+                              <div className="text-xs text-blue-400 font-semibold mb-1">Definition:</div>
+                              <div className="text-xs text-gray-300">{neighborDetails.properties.definition}</div>
+                            </div>
+                          )}
+                          
                           {neighborDetails.department && (
                             <div className="mb-1">
                               <span className="font-semibold">Department:</span>{' '}
@@ -312,9 +433,28 @@ export default function RightSidebar({
                         </div>
                       )}
 
+                      {/* ✅ Handle concept nodes */}
+                      {neighborDetails && neighborDetails.node_type === 'concept' && (
+                        <div className="text-xs text-gray-400">
+                          <div className="mb-1">
+                            <span className="font-semibold">Concept:</span> {neighborDetails.name}
+                          </div>
+                          
+                          {neighborDetails.properties?.definition && (
+                            <div className="mb-2 p-2 bg-blue-900/20 border border-blue-700/30 rounded">
+                              <div className="text-xs text-blue-400 font-semibold mb-1">Definition:</div>
+                              <div className="text-xs text-gray-300">{neighborDetails.properties.definition}</div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ✅ Fallback for other node types */}
                       {neighborDetails &&
                         neighborDetails.node_type !== 'section' &&
-                        neighborDetails.node_type !== 'entity' && (
+                        neighborDetails.node_type !== 'index' &&
+                        neighborDetails.node_type !== 'entity' &&
+                        neighborDetails.node_type !== 'concept' && (
                           <div className="text-xs text-gray-400">
                             <div className="mb-1">
                               <span className="font-semibold">Node:</span> {neighborDetails.name}
@@ -344,7 +484,6 @@ export default function RightSidebar({
         </div>
       </div>
 
-      {/* Full-text modal: docId is the section node id */}
       {documentToView && (
         <DocumentModal
           docId={documentToView}

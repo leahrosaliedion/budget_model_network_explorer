@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
-  base: '/US-Code_Network/',
+  base: '/budget_model_network_explorer/',
   plugins: [react()],
 })
 
